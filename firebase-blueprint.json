@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Drink Category",
+      "description": "Categories for grouping drinks",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "order": { "type": "integer" }
+      },
+      "required": ["name", "order"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Tea drink item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "prices": {
+          "type": "object",
+          "properties": {
+            "M": { "type": "integer" },
+            "L": { "type": "integer" }
+          }
+        },
+        "isRecommended": { "type": "boolean" },
+        "isAvailable": { "type": "boolean" },
+        "image": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["name", "categoryId", "prices"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer ordering information",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "status": { "enum": ["pending", "preparing", "ready", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["items", "totalAmount", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "categories": {
+      "schema": "Category",
+      "description": "Categories of drinks"
+    },
+    "products": {
+      "schema": "Product",
+      "description": "All available drinks"
+    },
+    "orders": {
+      "schema": "Order",
+      "description": "Customer orders"
+    }
+  }
+}
