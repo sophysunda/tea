@@ -1,0 +1,6 @@
+{
+  "name": "清峰手搖飲點單系統",
+  "description": "具有前台點餐功能與後台管理介面的完整茶飲點單系統，採用 Firebase 雲端資料庫。",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
