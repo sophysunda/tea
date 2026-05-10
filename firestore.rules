@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name', 'order']) &&
+             data.keys().size() == 2 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.order is int && data.order >= 0;
+    }
+
+    function isValidProduct(data) {
+      // Allowed keys: name, categoryId, prices, description, image, isRecommended, isAvailable
+      let optionalKeys = ['description', 'image', 'isRecommended', 'isAvailable'];
+      let requiredKeys = ['name', 'categoryId', 'prices'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().size() <= (requiredKeys.size() + optionalKeys.size()) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.categoryId is string &&
+             data.prices is map &&
+             (data.prices.get('M', -1) >= 0 || data.prices.get('L', -1) >= 0) &&
+             (!data.keys().contains('description') || (data.description is string && data.description.size() <= 1000)) &&
+             (!data.keys().contains('image') || (data.image is string && data.image.size() <= 2000)) &&
+             (!data.keys().contains('isRecommended') || data.isRecommended is bool) &&
+             (!data.keys().contains('isAvailable') || data.isAvailable is bool);
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['items', 'totalAmount', 'status', 'createdAt', 'customerName', 'phoneNumber']) &&
+             data.items is list && data.items.size() > 0 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.status in ['pending', 'preparing', 'ready', 'completed', 'cancelled'] &&
+             data.createdAt == request.time &&
+             data.customerName is string && data.customerName.size() <= 100 &&
+             data.phoneNumber is string && data.phoneNumber.size() <= 20;
+    }
+
+    // --- Collection Rules ---
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
+      allow create: if isSignedIn() && adminId == request.auth.uid && request.auth.token.email == 'sophysunda@gmail.com';
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidCategory(incoming());
+      allow update: if isAdmin() && isValidCategory(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidProduct(incoming()) && exists(/databases/$(database)/documents/categories/$(incoming().categoryId));
+      allow update: if isAdmin() && isValidProduct(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow get: if isAdmin(); // Since we don't have user accounts yet, only admins can view details
+      allow list: if isAdmin(); 
+      allow create: if isValidOrder(incoming()) && incoming().status == 'pending';
+      allow update: if isAdmin() && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+                    (!incoming().keys().contains('updatedAt') || incoming().updatedAt == request.time);
+      allow delete: if isAdmin();
+    }
+  }
+}
