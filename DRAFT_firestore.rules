@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name', 'order']) &&
+             data.keys().size() == 2 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.order is int && data.order >= 0;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'categoryId', 'prices']) &&
+             data.keys().size() >= 3 && // Allow optional fields like description, image, isRecommended
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.categoryId is string &&
+             data.prices is map &&
+             (data.prices.get('M', 0) is int || data.prices.get('L', 0) is int) &&
+             (!data.keys().contains('description') || data.description is string) &&
+             (!data.keys().contains('image') || data.image is string);
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['items', 'totalAmount', 'status', 'createdAt']) &&
+             data.items is list && data.items.size() > 0 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.status in ['pending', 'preparing', 'ready', 'completed', 'cancelled'] &&
+             data.createdAt == request.time;
+    }
+
+    // --- Collection Rules ---
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && request.auth.uid == adminId;
+      allow write: if false; // Only manageable via Admin SDK or Console
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidCategory(incoming());
+      allow update: if isAdmin() && isValidCategory(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidProduct(incoming()) && exists(/databases/$(database)/documents/categories/$(incoming().categoryId));
+      allow update: if isAdmin() && isValidProduct(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow get: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid); // Optional user ownership
+      allow list: if isAdmin(); 
+      allow create: if isValidOrder(incoming());
+      allow update: if isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isAdmin();
+    }
+  }
+}
